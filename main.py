@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import os
 import itertools
+from tqdm import tqdm
+
 
 class ImageProcessor:
     def __init__(self, image_path, blur_kernel_size=(5, 5), noise_kernel_size=(10, 10),
@@ -114,24 +116,36 @@ class ImageProcessor:
         cv2.destroyAllWindows()
 
 
-
-
 def evaluate_processor(image_paths, output_dir, param_sets):
-    for params in param_sets:
+    for params in tqdm(param_sets):
+        params_dict = {
+            'blur_kernel_size': params[0],
+            'noise_kernel_size': params[1],
+            'lung_contour_area_threshold': params[2],
+            'black_bg_threshold': params[3],
+            'use_otsu': params[4],
+            'overlay_alpha': params[5],
+            'adaptive_threshold_block_size': params[6],
+            'adaptive_threshold_C': params[7]
+        }
+
         for image_path in image_paths:
             processor = ImageProcessor(
                 image_path=image_path,
-                blur_kernel_size=params['blur_kernel_size'],
-                noise_kernel_size=params['noise_kernel_size'],
-                lung_contour_area_threshold=params['lung_contour_area_threshold'],
-                black_bg_threshold=params['black_bg_threshold'],
-                use_otsu=params['use_otsu'],
-                overlay_alpha=params['overlay_alpha']
+                blur_kernel_size=params_dict['blur_kernel_size'],
+                noise_kernel_size=params_dict['noise_kernel_size'],
+                lung_contour_area_threshold=params_dict['lung_contour_area_threshold'],
+                black_bg_threshold=params_dict['black_bg_threshold'],
+                use_otsu=params_dict['use_otsu'],
+                overlay_alpha=params_dict['overlay_alpha'],
+                adaptive_threshold_block_size=params_dict['adaptive_threshold_block_size'],
+                adaptive_threshold_C=params_dict['adaptive_threshold_C']
             )
+
             output_with_transparency = processor.remove_black_background(make_transparent=True)
 
             base_filename = os.path.basename(image_path)
-            output_filename = f"{output_dir}/output_{base_filename}_blur{params['blur_kernel_size'][0]}_noise{params['noise_kernel_size'][0]}_threshold{params['lung_contour_area_threshold']}_bg{params['black_bg_threshold']}.png"
+            output_filename = f"{output_dir}/output_{base_filename}_blur{params_dict['blur_kernel_size'][0]}x{params_dict['blur_kernel_size'][1]}_noise{params_dict['noise_kernel_size'][0]}x{params_dict['noise_kernel_size'][1]}_threshold{params_dict['lung_contour_area_threshold']}_bg{params_dict['black_bg_threshold']}_otsu{params_dict['use_otsu']}_alpha{params_dict['overlay_alpha']}_blocksize{params_dict['adaptive_threshold_block_size']}_C{params_dict['adaptive_threshold_C']}.png"
             processor.save_result(output_with_transparency, output_filename)
 
 
@@ -150,37 +164,21 @@ if __name__ == '__main__':
     output_with_transparency = processor.remove_black_background(make_transparent=True)
     processor.save_result(output_with_transparency, 'xray_with_lung_overlay.png')
 
+    param_combinations = list(itertools.product(
+        [(3, 3), (5, 5), (7, 7)],
+        [(5, 5), (10, 10), (15, 15)],
+        [5000, 7000, 9000],
+        [90, 110, 130],
+        [True, False],
+        [0.2, 0.3, 0.4],
+        [11, 51, 101],
+        [0, 2, 4]
+    ))
+    chest_dir = 'chest/'
+    output_dir = 'results/'
+    # Tutaj jest lista param_sets zdefiniowana jak wcześniej
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-    # chest_dir = 'chest_test/'
-    # output_dir = 'results/'
-    #
-    # # Przykładowe zakresy dla każdego parametru
-    # blur_kernel_sizes = [(3, 3), (5, 5)]
-    # noise_kernel_sizes = [(8, 8), (10, 10)]
-    # lung_contour_area_thresholds = [6000, 7000]
-    # black_bg_thresholds = [90, 100, 110]
-    # use_otsu_options = [True, False]
-    # overlay_alphas = [0.3, 0.5]
-    #
-    # # Generowanie kombinacji
-    # param_combinations = list(itertools.product(
-    #     blur_kernel_sizes,
-    #     noise_kernel_sizes,
-    #     lung_contour_area_thresholds,
-    #     black_bg_thresholds,
-    #     use_otsu_options,
-    #     overlay_alphas
-    # ))
-    #
-    # # Ograniczenie do pierwszych 100 kombinacji
-    # param_sets = [
-    #     {'blur_kernel_size': combo[0], 'noise_kernel_size': combo[1], 'lung_contour_area_threshold': combo[2],
-    #      'black_bg_threshold': combo[3], 'use_otsu': combo[4], 'overlay_alpha': combo[5]}
-    #     for combo in param_combinations[:100]
-    # ]
-    # # Tutaj jest lista param_sets zdefiniowana jak wcześniej
-    # if not os.path.exists(output_dir):
-    #     os.makedirs(output_dir)
-    #
-    # image_paths = [os.path.join(chest_dir, f) for f in os.listdir(chest_dir) if os.path.isfile(os.path.join(chest_dir, f))]
-    # evaluate_processor(image_paths, output_dir, param_sets)
+    image_paths = [os.path.join(chest_dir, f) for f in os.listdir(chest_dir) if os.path.isfile(os.path.join(chest_dir, f))]
+    evaluate_processor(image_paths, output_dir, param_combinations)
