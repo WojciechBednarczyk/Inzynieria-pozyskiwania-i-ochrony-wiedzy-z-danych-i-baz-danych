@@ -20,6 +20,7 @@ class ImageProcessor:
         self.adaptive_threshold_C = adaptive_threshold_C
 
         self.image = self.load_image()
+        self.background_mask = None
         self.blurred = self.apply_gaussian_blur()
         self.binary_image = self.apply_threshold()
         self.cleaned = self.remove_noise()
@@ -35,20 +36,37 @@ class ImageProcessor:
             raise ValueError("Image cannot be loaded. Please check the file path.")
         return image
 
+    def apply_background_mask(self, image):
+        if self.background_mask is None:
+            self.background_mask = self.create_background_mask(image)
+        return cv2.bitwise_and(image, image, mask=self.background_mask)
+
+    def create_background_mask(self, image):
+        _, binary_image = cv2.threshold(image, self.black_bg_threshold, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if contours:
+            largest_contour = max(contours, key=cv2.contourArea)
+            contour_mask = np.zeros_like(image)
+            cv2.drawContours(contour_mask, [largest_contour], -1, 255, -1)
+            return contour_mask
+        else:
+            return np.ones_like(image) * 255  # If no contours found, return a mask that doesn't mask anything
+
     def apply_gaussian_blur(self):
-        return cv2.GaussianBlur(self.image, self.blur_kernel_size, 0)
+        image_masked = self.apply_background_mask(self.image)
+        return cv2.GaussianBlur(image_masked, self.blur_kernel_size, 0)
 
     def apply_threshold(self):
+        image_masked = self.apply_background_mask(self.blurred)
         if self.use_otsu:
-            _, binary_image = cv2.threshold(self.blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            _, binary_image = cv2.threshold(image_masked, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         else:
-            binary_image = cv2.adaptiveThreshold(self.blurred, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV,
-                                                 self.adaptive_threshold_block_size, self.adaptive_threshold_C)
+            binary_image = cv2.adaptiveThreshold(image_masked, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                                 cv2.THRESH_BINARY_INV, self.adaptive_threshold_block_size, self.adaptive_threshold_C)
         return binary_image
 
     def remove_noise(self):
-        kernel = np.ones(self.noise_kernel_size, np.uint8)
-        return cv2.morphologyEx(self.binary_image, cv2.MORPH_OPEN, kernel)
+        return cv2.morphologyEx(self.binary_image, cv2.MORPH_OPEN, np.ones(self.noise_kernel_size, np.uint8))
 
     def find_contours(self):
         contours, _ = cv2.findContours(self.cleaned.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -60,55 +78,33 @@ class ImageProcessor:
             area = cv2.contourArea(contour)
             if area > self.lung_contour_area_threshold:
                 cv2.drawContours(lung_mask, [contour], -1, (255), thickness=-1)
+        lung_mask = self.apply_background_mask(lung_mask)
         return lung_mask
 
     def color_images(self):
-        original_colored = cv2.cvtColor(self.image, cv2.COLOR_GRAY2BGR)
-        lung_colored = cv2.cvtColor(self.lung_mask, cv2.COLOR_GRAY2BGR)
+        original_colored = cv2.cvtColor(self.apply_background_mask(self.image), cv2.COLOR_GRAY2BGR)
+        lung_colored = cv2.cvtColor(self.apply_background_mask(self.lung_mask), cv2.COLOR_GRAY2BGR)
         lung_colored[:, :, 1:3] = 0  # Color the mask red for visibility
         return original_colored, lung_colored
 
     def apply_overlay(self):
-        return cv2.addWeighted(self.colored_images[0], 1, self.colored_images[1], 0.3, 0)
+        return cv2.addWeighted(self.colored_images[0], 1, self.colored_images[1], self.overlay_alpha, 0)
 
     def prepare_output(self):
         return np.hstack((self.colored_images[0], self.overlay))
 
-    def remove_black_background(self, threshold=110, make_transparent=False):
-        # Convert to a color image if necessary
-        colored_image = cv2.cvtColor(self.output_image, cv2.COLOR_GRAY2BGR) if len(
-            self.output_image.shape) == 2 else self.output_image.copy()
-
-        # Thresholding to create a mask for the black background
-        gray_image = cv2.cvtColor(colored_image, cv2.COLOR_BGR2GRAY)
-        _, binary_image = cv2.threshold(gray_image, threshold, 255, cv2.THRESH_BINARY)
-
-        # Find contours
-        contours, _ = cv2.findContours(binary_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-        # Assuming the largest contour is the main subject
-        if contours:
-            largest_contour = max(contours, key=cv2.contourArea)
-            contour_mask = np.zeros_like(gray_image)
-            cv2.drawContours(contour_mask, [largest_contour], -1, 255, -1)
-
-            if make_transparent:
-                # Convert image to RGBA if transparency is needed
-                colored_image = cv2.cvtColor(colored_image, cv2.COLOR_BGR2BGRA)
-                # Set the alpha channel: transparent where the mask is black (background)
-                colored_image[:, :, 3] = np.where(contour_mask == 0, 0, 255)
-            else:
-                # Replace black background with white, preserving the main subject
-                for i in range(3):  # For each color channel
-                    colored_image[:, :, i] = np.where(contour_mask == 0, 255, colored_image[:, :, i])
-        else:
-            # If no contours are found, return the original image
-            return self.output_image
-
-        return colored_image
-
-    def save_result(self, image, output_path='xray_with_lung_overlay6.png'):
+    def save_result(self, image, output_path):
         cv2.imwrite(output_path, image)
+
+    def save_result_full_name(self, image, output_path):
+        # Extract the filename and extension from the image path
+        filename, ext = os.path.splitext(os.path.basename(self.image_path))
+
+        # Create a new filename with the parameters
+        new_filename = f"{filename}_blur{self.blur_kernel_size}_noise{self.noise_kernel_size}_contour{self.lung_contour_area_threshold}_bg{self.black_bg_threshold}_otsu{self.use_otsu}_alpha{self.overlay_alpha}_block{self.adaptive_threshold_block_size}_C{self.adaptive_threshold_C}{ext}"
+
+        # Save the image with the new filename
+        cv2.imwrite(os.path.join(os.path.dirname(output_path), new_filename), image)
 
     def show_result(self, image):
         cv2.imshow('Result', image)
@@ -116,69 +112,34 @@ class ImageProcessor:
         cv2.destroyAllWindows()
 
 
-def evaluate_processor(image_paths, output_dir, param_sets):
-    for params in tqdm(param_sets):
-        params_dict = {
-            'blur_kernel_size': params[0],
-            'noise_kernel_size': params[1],
-            'lung_contour_area_threshold': params[2],
-            'black_bg_threshold': params[3],
-            'use_otsu': params[4],
-            'overlay_alpha': params[5],
-            'adaptive_threshold_block_size': params[6],
-            'adaptive_threshold_C': params[7]
-        }
-
-        for image_path in image_paths:
-            processor = ImageProcessor(
-                image_path=image_path,
-                blur_kernel_size=params_dict['blur_kernel_size'],
-                noise_kernel_size=params_dict['noise_kernel_size'],
-                lung_contour_area_threshold=params_dict['lung_contour_area_threshold'],
-                black_bg_threshold=params_dict['black_bg_threshold'],
-                use_otsu=params_dict['use_otsu'],
-                overlay_alpha=params_dict['overlay_alpha'],
-                adaptive_threshold_block_size=params_dict['adaptive_threshold_block_size'],
-                adaptive_threshold_C=params_dict['adaptive_threshold_C']
-            )
-
-            output_with_transparency = processor.remove_black_background(make_transparent=True)
-
-            base_filename = os.path.basename(image_path)
-            output_filename = f"{output_dir}/output_{base_filename}_blur{params_dict['blur_kernel_size'][0]}x{params_dict['blur_kernel_size'][1]}_noise{params_dict['noise_kernel_size'][0]}x{params_dict['noise_kernel_size'][1]}_threshold{params_dict['lung_contour_area_threshold']}_bg{params_dict['black_bg_threshold']}_otsu{params_dict['use_otsu']}_alpha{params_dict['overlay_alpha']}_blocksize{params_dict['adaptive_threshold_block_size']}_C{params_dict['adaptive_threshold_C']}.png"
-            processor.save_result(output_with_transparency, output_filename)
-
-
+# Example usage:
 if __name__ == '__main__':
-    processor = ImageProcessor(
-        image_path='chest/IM-0143-0001.jpeg',
-        blur_kernel_size=(5, 5),
-        noise_kernel_size=(10, 10),
-        lung_contour_area_threshold=7000,
-        black_bg_threshold=110,
-        use_otsu=False,
-        overlay_alpha=0.3,
-        adaptive_threshold_block_size=301,
-        adaptive_threshold_C=3
-    )
-    output_with_transparency = processor.remove_black_background(make_transparent=True)
-    processor.save_result(output_with_transparency, 'xray_with_lung_overlay.png')
+    # Zakładamy, że ścieżka 'results/' już istnieje. Jeśli nie, należy ją utworzyć:
+    if not os.path.exists('results/'):
+        os.makedirs('results/')
 
-    param_combinations = list(itertools.product(
-        [(3, 3), (5, 5), (7, 7)],
-        [(5, 5), (10, 10), (15, 15)],
-        [5000, 7000, 9000],
-        [90, 110, 130],
-        [True, False],
-        [0.2, 0.3, 0.4],
-        [11, 51, 101],
-        [0, 2, 4]
-    ))
-    chest_dir = 'chest/'
-    output_dir = 'results/'
-    # Tutaj jest lista param_sets zdefiniowana jak wcześniej
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    # Początkowe parametry
+    initial_params = {
+        'image_path': 'chest/IM-0143-0001.jpeg',
+        'blur_kernel_size': (15, 15),
+        'noise_kernel_size': (15, 15),
+        'lung_contour_area_threshold': 2000, # Ta wartość będzie zmieniana w pętli
+        'black_bg_threshold': 120,
+        'use_otsu': True,
+        'overlay_alpha': 0.3,
+        'adaptive_threshold_block_size': 111,
+        'adaptive_threshold_C': 1
+    }
 
-    image_paths = [os.path.join(chest_dir, f) for f in os.listdir(chest_dir) if os.path.isfile(os.path.join(chest_dir, f))]
-    evaluate_processor(image_paths, output_dir, param_combinations)
+    for threshold in tqdm(range(0, 50001, 100), desc='Progress'):
+        # Ustawiamy nową wartość lung_contour_area_threshold
+        initial_params['lung_contour_area_threshold'] = threshold
+
+        # Tworzymy nową instancję procesora z aktualnym progiem
+        processor = ImageProcessor(**initial_params)
+
+        # Przygotowujemy obraz wyjściowy
+        processed_image = processor.prepare_output()
+
+        # Zapisujemy obraz z pełną nazwą, zawierającą parametry
+        processor.save_result_full_name(processed_image, 'results/')
