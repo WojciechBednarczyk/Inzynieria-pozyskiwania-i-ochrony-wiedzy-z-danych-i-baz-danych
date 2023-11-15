@@ -1,0 +1,5 @@
+img#processedImage {
+  max-width: 100%;  /* maksymalna szerokość obrazu to szerokość kontenera */
+  max-height: 100vh; /* maksymalna wysokość obrazu to 100% wysokości okna przeglądarki */
+  object-fit: contain; /* upewnia się, że cały obraz będzie widoczny i proporcje zostaną zachowane */
+}
