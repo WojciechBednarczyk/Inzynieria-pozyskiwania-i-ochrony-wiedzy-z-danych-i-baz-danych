@@ -9,96 +9,151 @@
 <body>
 
 <input type="file" id="fileInput" name="file">
-<img id="processedImage" src="" alt="Processed Image">
+<img id="processedImage" src="" alt="Processed Image" style="max-width: 100%; max-height: 100vh; object-fit: contain;">
 
-<!-- Suwaki do konfiguracji ImageProcessor -->
 <div>
-    Otsu: <span id="otsuValue"></span>
-    <input type="range" id="otsuSlider" min="0" max="1" step="1">
+    <label>Otsu: <input type="checkbox" id="otsuCheckbox" checked></label>
+    <label>Histogram: <input type="checkbox" id="histogramCheckbox"></label>
 </div>
 <div>
-    Histogram: <span id="histogramValue"></span>
-    <input type="range" id="histogramSlider" min="0" max="1" step="1">
+    Blur Kernel Size: <input type="number" id="blurKernelSize" min="1" value="21" step="2">
+    Noise Kernel Size: <input type="number" id="noiseKernelSize" min="1" value="21" step="2">
 </div>
 <div>
-    Area Threshold: <span id="areaThresholdValue"></span>
-    <input type="range" id="areaThresholdSlider" min="5000" max="15000" step="100">
+    Black Background Threshold: <input type="number" id="blackBgThreshold" min="0" max="255" value="110">
 </div>
 <div>
-    Block Size: <span id="blockSizeValue"></span>
-    <input type="range" id="blockSizeSlider" min="3" max="500" step="10">
+    Overlay Alpha: <input type="number" id="overlayAlpha" min="0" max="1" step="0.1" value="0.3">
 </div>
 <div>
-    C Value: <span id="cValue"></span>
-    <input type="range" id="cSlider" min="1" max="50" step="1">
+    Area Threshold: <span id="areaThresholdValue">5000</span>
+    <input type="range" id="areaThresholdSlider" min="1" max="100000" step="1000" value="5000">
+</div>
+<div>
+    Adaptive Threshold Block Size: <input type="number" id="adaptiveBlockSize" min="3" value="301" step="2">
+    Adaptive Threshold C: <input type="number" id="adaptiveThresholdC" min="1" value="3">
 </div>
 
 <script>
-$(document).ready(function() {
-    // Funkcja do aktualizacji wartości suwaków
-    function updateSliderValues() {
-        $('#otsuValue').text($('#otsuSlider').val());
-        $('#histogramValue').text($('#histogramSlider').val());
-        $('#areaThresholdValue').text($('#areaThresholdSlider').val());
-        $('#blockSizeValue').text($('#blockSizeSlider').val());
-        $('#cValue').text($('#cSlider').val());
+    function isPositiveInteger(value) {
+        return Number.isInteger(value) && value > 0;
     }
 
-    $('#fileInput').change(function() {
-        var formData = new FormData();
-        formData.append('file', $('#fileInput')[0].files[0]);
-        $.ajax({
-            url: '/upload',
-            type: 'POST',
-            data: formData,
-            contentType: false,
-            processData: false,
-            success: function(data) {
-                $('#processedImage').attr('src', data.image_url);
-                updateSliderValues();
-            },
-            error: function() {
-                alert('Failed to upload image.');
-            }
-        });
-    });
+    function isOdd(value) {
+        return value % 2 === 1;
+    }
+
+    function isWithinRange(value, min, max) {
+        return value >= min && value <= max;
+    }
+
+    function updateSliderValues() {
+        $('#areaThresholdValue').text($('#areaThresholdSlider').val());
+    }
+
+    function validateInputs() {
+        let blurKernelSizeValue = parseInt($('#blurKernelSize').val());
+        let noiseKernelSizeValue = parseInt($('#noiseKernelSize').val());
+        let blackBgThresholdValue = parseInt($('#blackBgThreshold').val());
+        let overlayAlphaValue = parseFloat($('#overlayAlpha').val());
+        let adaptiveBlockSizeValue = parseInt($('#adaptiveBlockSize').val());
+        let adaptiveThresholdCValue = parseInt($('#adaptiveThresholdC').val());
+
+        if (!isPositiveInteger(blurKernelSizeValue) || !isOdd(blurKernelSizeValue)) {
+            alert('Blur Kernel Size must be a positive odd integer.');
+            return false;
+        }
+
+        if (!isPositiveInteger(noiseKernelSizeValue) || !isOdd(noiseKernelSizeValue)) {
+            alert('Noise Kernel Size must be a positive odd integer.');
+            return false;
+        }
+
+        if (!isWithinRange(blackBgThresholdValue, 0, 255)) {
+            alert('Black Background Threshold must be between 0 and 255.');
+            return false;
+        }
+
+        if (!isWithinRange(overlayAlphaValue, 0, 1)) {
+            alert('Overlay Alpha must be between 0 and 1.');
+            return false;
+        }
+
+        if (!isPositiveInteger(adaptiveBlockSizeValue) || !isOdd(adaptiveBlockSizeValue)) {
+            alert('Adaptive Threshold Block Size must be a positive odd integer.');
+            return false;
+        }
+
+        if (!isPositiveInteger(adaptiveThresholdCValue)) {
+            alert('Adaptive Threshold C must be a positive integer.');
+            return false;
+        }
+
+        return true;
+    }
 
     function updateImage() {
-        var otsu = $('#otsuSlider').val();
-        var histogram = $('#histogramSlider').val();
-        var areaThreshold = $('#areaThresholdSlider').val();
-        var blockSize = $('#blockSizeSlider').val();
-        var cValue = $('#cSlider').val();
-        var filename = $('#fileInput')[0].files[0].name;
+        if (!validateInputs()) {
+            return; // Zatrzymaj aktualizację obrazu, jeśli walidacja nie powiedzie się
+        }
+
+        let blurKernelSizeValue = parseInt($('#blurKernelSize').val());
+        let noiseKernelSizeValue = parseInt($('#noiseKernelSize').val());
+        let dataToSend = {
+            'filename': uploadedFilename,
+            'use_otsu': $('#otsuCheckbox').is(':checked'),
+            'use_histogram': $('#histogramCheckbox').is(':checked'),
+            'blur_kernel_size': [blurKernelSizeValue, blurKernelSizeValue],
+            'noise_kernel_size': [noiseKernelSizeValue, noiseKernelSizeValue],
+            'black_bg_threshold': parseInt($('#blackBgThreshold').val()),
+            'overlay_alpha': parseFloat($('#overlayAlpha').val()),
+            'lung_contour_area_threshold': parseInt($('#areaThresholdSlider').val()),
+            'adaptive_threshold_block_size': parseInt($('#adaptiveBlockSize').val()),
+            'adaptive_threshold_C': parseInt($('#adaptiveThresholdC').val())
+        };
 
         $.ajax({
             url: '/process',
             type: 'POST',
             contentType: 'application/json',
-            data: JSON.stringify({
-                'filename': filename,
-                'use_otsu': otsu === "1",
-                'use_histogram': histogram === "1",
-                'lung_contour_area_threshold': parseInt(areaThreshold),
-                'adaptive_threshold_block_size': parseInt(blockSize),
-                'adaptive_threshold_C': parseInt(cValue)
-            }),
+            data: JSON.stringify(dataToSend),
             dataType: 'json',
-            success: function(data) {
-                $('#processedImage').attr('src', data.image_url);
+            success: function (data) {
+                let imageSrc = data.image_url + '?t=' + new Date().getTime();
+                $('#processedImage').attr('src', imageSrc);
             },
-            error: function() {
+            error: function () {
                 alert('Failed to process image.');
             }
         });
     }
 
-    // Dodanie obsługi zdarzeń dla suwaków
-    $('#otsuSlider, #histogramSlider, #areaThresholdSlider, #blockSizeSlider, #cSlider').on('input change', function() {
+    let uploadedFilename = "";
+
+    $('#fileInput').change(function () {
+        let formData = new FormData();
+        formData.append('file', $('#fileInput')[0].files[0]);
+        uploadedFilename = $('#fileInput')[0].files[0].name;
+
+        $.ajax({
+            url: '/upload',  // Endpoint do przesyłania plików
+            type: 'POST',
+            data: formData,
+            processData: false,  // Wymagane, aby przesłać dane jako FormData
+            contentType: false,  // Wymagane, aby przesłać dane jako FormData
+            success: function (data) {
+                // Tutaj możesz obsłużyć odpowiedź serwera, jeśli to konieczne
+            },
+            error: function () {
+                alert('Failed to upload file.');
+            }
+        });
+    });
+
+    $('input').on('input change', function () {
         updateSliderValues();
         updateImage();
     });
-});
 </script>
 
 </body>

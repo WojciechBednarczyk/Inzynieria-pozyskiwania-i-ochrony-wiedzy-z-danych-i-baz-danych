@@ -1,35 +1,38 @@
 from flask import Flask, request, render_template, send_from_directory, url_for
-from ImageProcessor import ImageProcessor
+from ImageProcessor import ImageProcessor  # Importuj klasę ImageProcessor
 from werkzeug.utils import secure_filename
 import os
 import json
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'  # Upewnij się, że ten folder istnieje i ma odpowiednie uprawnienia
+app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['OUTPUT_FOLDER'] = 'static'
-app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0  # Opcjonalnie, aby zapobiec cachowaniu
+app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
-# Strona główna z formularzem do przesyłania
 @app.route('/')
 def index():
     return render_template('upload.html')
 
-# Endpoint do przetwarzania obrazu
 @app.route('/process', methods=['POST'])
 def process_image():
     data = request.json
     filename = data['filename']
     image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    blur_kernel_size = tuple(data['blur_kernel_size'])
+    noise_kernel_size = tuple(data['noise_kernel_size'])
 
-    # Tutaj tworzymy instancję ImageProcessor z parametrami przekazanymi przez użytkownika
     processor = ImageProcessor(
         image_path=image_path,
+        blur_kernel_size=blur_kernel_size,
+        noise_kernel_size=noise_kernel_size,
+        lung_contour_area_threshold=data['lung_contour_area_threshold'],
+        black_bg_threshold=data['black_bg_threshold'],
         use_otsu=data['use_otsu'],
         use_histogram=data['use_histogram'],
-        lung_contour_area_threshold=data['lung_contour_area_threshold'],
+        overlay_alpha=data['overlay_alpha'],
         adaptive_threshold_block_size=data['adaptive_threshold_block_size'],
         adaptive_threshold_C=data['adaptive_threshold_C']
     )
@@ -41,7 +44,6 @@ def process_image():
 
     return {'image_url': url_for('static', filename=output_filename)}
 
-# Endpoint do przesyłania plików
 @app.route('/upload', methods=['POST'])
 def upload_file():
     file = request.files['file']
@@ -49,9 +51,6 @@ def upload_file():
         filename = secure_filename(file.filename)
         image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(image_path)
-
-        # Tu możesz przetworzyć obrazek z domyślnymi ustawieniami i zwrócić ścieżkę do niego
-        # ...
 
         return {'image_url': url_for('static', filename=filename)}
     return {'error': 'No file uploaded'}, 400

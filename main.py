@@ -187,7 +187,7 @@ if __name__ == '__main__':
     # Początkowe parametry
     initial_params = {
         'image_path': 'chest/IM-0143-0001.jpeg',
-        'black_bg_threshold': 121,
+        'black_bg_threshold': 20,
         'use_otsu': False,
         'use_histogram': False,
         'overlay_alpha': 0.3,
