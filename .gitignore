@@ -1,0 +1,6 @@
+.idea
+/venv
+/results
+/histogram
+/chest_xray
+/chest_test
