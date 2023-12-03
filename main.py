@@ -1,36 +1,32 @@
 import cv2
 import numpy as np
 import os
-import itertools
-from tqdm import tqdm
 import matplotlib.pyplot as plt
-from scipy.signal import find_peaks
-from itertools import product
 
 
 class ImageProcessor:
-    def __init__(self, image_path, blur_kernel_size=(5, 5), noise_kernel_size=(10, 10),
-                 lung_contour_area_threshold=7000, black_bg_threshold=110, use_otsu=True, use_histogram=False,
-                 overlay_alpha=0.3, adaptive_threshold_block_size=301, adaptive_threshold_C=3):
+    def __init__(self, image_path, threshold_decrement, brightness_cutoff_percent, iterations, min_contiguous_pixels,
+                 blur_kernel_size=(5, 5), noise_kernel_size=(10, 10),
+                 lung_contour_area_threshold=7000, black_bg_threshold=110, overlay_alpha=0.3):
         self.image_path = image_path
         self.blur_kernel_size = blur_kernel_size
         self.noise_kernel_size = noise_kernel_size
         self.lung_contour_area_threshold = lung_contour_area_threshold
         self.black_bg_threshold = black_bg_threshold
-        self.use_otsu = use_otsu
-        self.use_histogram = use_histogram
         self.overlay_alpha = overlay_alpha
-        self.adaptive_threshold_block_size = adaptive_threshold_block_size
-        self.adaptive_threshold_C = adaptive_threshold_C
-
+        self.brightness_cutoff_percent = brightness_cutoff_percent
+        self.iterations = iterations
+        self.min_contiguous_pixels = min_contiguous_pixels
+        self.threshold_decrement = threshold_decrement
         self.image = self.load_image()
         self.background_mask = None
         self.blurred = self.apply_gaussian_blur()
-        self.binary_image = self.apply_threshold()
+        self.binary_image = self.create_dynamic_threshold_image()
         self.cleaned = self.remove_noise()
         self.contours = self.find_contours()
         self.lung_mask = self.draw_lungs_contours()
         self.colored_images = self.color_images()
+        self.prepare_final_mask()
         self.overlay = self.apply_overlay()
         self.output_image = self.prepare_output()
 
@@ -60,39 +56,32 @@ class ImageProcessor:
         image_masked = self.apply_background_mask(self.image)
         return cv2.GaussianBlur(image_masked, self.blur_kernel_size, 0)
 
-    def apply_threshold(self):
-        image_masked = self.apply_background_mask(self.blurred)
-        if self.use_histogram:
-            histogram_data = self.get_histogram()
-            suggested_thresholds = self.analyze_histogram(histogram_data)
-            if suggested_thresholds:
-                # Możesz tu zastosować różne strategie wyboru wartości progu
-                # Na przykład, możesz wybrać najmniejszą dolinę, największą dolinę, średnią dolinę, itp.
-                # W tym przykładzie wybieramy najmniejszą dolinę jako wartość progu
-                threshold_value = min(suggested_thresholds)
-                _, binary_image = cv2.threshold(image_masked, threshold_value, 255, cv2.THRESH_BINARY)
-            else:
-                # Jeśli nie znaleziono żadnych progu, zastosuj wartość domyślną lub inny sposób progowania
-                _, binary_image = cv2.threshold(image_masked, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        elif self.use_otsu:
-            _, binary_image = cv2.threshold(image_masked, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        else:
-            binary_image = cv2.adaptiveThreshold(image_masked, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
-                                                 cv2.THRESH_BINARY, self.adaptive_threshold_block_size,
-                                                 self.adaptive_threshold_C)
-        return binary_image
+    def create_dynamic_threshold_image(self):
+        image_masked = self.apply_background_mask(self.blurred).copy()
+        binary_image = np.zeros_like(image_masked)  # Utworzenie początkowego obrazu binarnego
+        current_brightness_cutoff = self.brightness_cutoff_percent
+        nonzero_indices = image_masked > 0
 
-    def analyze_histogram(self, histogram_data):
-        # Przyjmijmy, że ta funkcja zwraca listę sugerowanych wartości progowych opartych na histogramie
-        # Na przykład może zwracać doliny między szczytami jako dobre punkty progowe
-        # Zaimplementujmy tę funkcję zgodnie z wcześniejszą dyskusją
-        peaks, _ = find_peaks(histogram_data, height=0.001)
-        thresholds = []
-        for peak in peaks:
-            if histogram_data[peak] > 0.005:  # considering significant peaks only
-                valley = np.argmin(histogram_data[peak:peak + 50]) + peak
-                thresholds.append(valley)
-        return thresholds
+        for _ in range(self.iterations):
+
+            if not np.any(nonzero_indices):  # Przerwanie, jeśli nie ma niezerowych pikseli
+                break
+
+            mean_brightness = np.mean(image_masked[nonzero_indices])
+            brightness_threshold = mean_brightness * (current_brightness_cutoff / 100.0)
+
+            binary_image[nonzero_indices] = np.where(image_masked[nonzero_indices] <= brightness_threshold, 255,
+                                                     0).astype(np.uint8)
+
+            nonzero_indices = binary_image > 0  # Aktualizacja dla kolejnej iteracji
+
+            # Zmniejszenie progu jasności o zadany dekrement
+            current_brightness_cutoff = max(current_brightness_cutoff - self.threshold_decrement, 0)
+
+        kernel = np.ones((self.min_contiguous_pixels, self.min_contiguous_pixels), np.uint8)
+        binary_image = cv2.morphologyEx(binary_image, cv2.MORPH_OPEN, kernel)
+
+        return binary_image
 
     def remove_noise(self):
         return cv2.morphologyEx(self.binary_image, cv2.MORPH_OPEN, np.ones(self.noise_kernel_size, np.uint8))
@@ -110,6 +99,24 @@ class ImageProcessor:
         lung_mask = self.apply_background_mask(lung_mask)
         return lung_mask
 
+    def prepare_final_mask(self):
+        # Znajdź kontury na masce płuc
+        contours, _ = cv2.findContours(self.lung_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Posortuj kontury według powierzchni w porządku malejącym i weź dwa największe
+        sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)[:2]
+
+        # Stwórz nową pustą maskę
+        final_mask = np.zeros_like(self.lung_mask, dtype=np.uint8)
+
+        # Narysuj dwa największe kontury na masce
+        cv2.drawContours(final_mask, sorted_contours, -1, (255), thickness=cv2.FILLED)
+
+        # Stwórz finalny obraz, nakładając nową maskę na obraz kolorowy z płucami
+        final_lung_area = cv2.bitwise_and(self.color_images()[1], self.color_images()[1], mask=final_mask)
+
+        self.colored_images = self.colored_images[0], final_lung_area
+
     def color_images(self):
         original_colored = cv2.cvtColor(self.apply_background_mask(self.image), cv2.COLOR_GRAY2BGR)
         lung_colored = cv2.cvtColor(self.apply_background_mask(self.lung_mask), cv2.COLOR_GRAY2BGR)
@@ -124,16 +131,6 @@ class ImageProcessor:
 
     def save_result(self, image, output_path):
         cv2.imwrite(output_path, image)
-
-    def save_result_full_name(self, image, output_path):
-        # Extract the filename and extension from the image path
-        filename, ext = os.path.splitext(os.path.basename(self.image_path))
-
-        # Create a new filename with the parameters
-        new_filename = f"{filename}_blur{self.blur_kernel_size}_noise{self.noise_kernel_size}_contour{self.lung_contour_area_threshold}_bg{self.black_bg_threshold}_otsu{self.use_otsu}_alpha{self.overlay_alpha}_block{self.adaptive_threshold_block_size}_C{self.adaptive_threshold_C}{ext}"
-
-        # Save the image with the new filename
-        cv2.imwrite(os.path.join(os.path.dirname(output_path), new_filename), image)
 
     def show_result(self, image):
         cv2.imshow('Result', image)
@@ -176,41 +173,21 @@ class ImageProcessor:
 
 
 # Example usage:
+# Example usage:
 if __name__ == '__main__':
-    # Zakładamy, że ścieżka 'results/' już istnieje. Jeśli nie, należy ją utworzyć:
-    if not os.path.exists('results/'):
-        os.makedirs('results/')
-    if not os.path.exists('histogram/'):
-        os.makedirs('histogram/')
+    # Zakładamy, że ścieżka do obrazu rentgenowskiego to 'lung_xray.jpg'
+    image_path = 'chest/IM-0135-0001.jpeg'
 
+    # Tworzenie instancji klasy ImageProcessor z określonymi parametrami
+    processor = ImageProcessor(image_path,
+                               black_bg_threshold=110,
+                               brightness_cutoff_percent=120,
+                               threshold_decrement=5,
+                               iterations=1,
+                               min_contiguous_pixels=60)
 
-    # Początkowe parametry
-    initial_params = {
-        'image_path': 'chest/IM-0143-0001.jpeg',
-        'black_bg_threshold': 20,
-        'use_otsu': False,
-        'use_histogram': False,
-        'overlay_alpha': 0.3,
-        'blur_kernel_size': (5, 5),
-        'noise_kernel_size': (5, 5),
-        'lung_contour_area_threshold': 4000,
-    }
+    # Przetwarzanie obrazu
+    processed_image = processor.output_image
 
-    block_sizes = list(range(3, 103, 22))
-    Cs = list(range(1, 11, 1))
-    lung_contour_area_thresholds = list(range(1, 10000, 100))
-
-    combinations = list(product(block_sizes, Cs, lung_contour_area_thresholds))
-
-    for block_size, C, lung_contour_area_thresholds in tqdm(combinations,desc='Processing combinations'):
-        initial_params.update({
-            'adaptive_threshold_block_size': block_size,
-            'adaptive_threshold_C': C,
-            'lung_contour_area_threshold': lung_contour_area_thresholds
-        })
-
-        processor = ImageProcessor(**initial_params)
-        processed_image = processor.prepare_output()
-        processor.save_result_full_name(processed_image, 'results/')
-        # Generate and save the histogram
-        processor.save_histogram('histogram/')
+    # Zapisanie przetworzonego obrazu
+    processor.save_result(processed_image, 'results/processed_lung_xray.jpg')

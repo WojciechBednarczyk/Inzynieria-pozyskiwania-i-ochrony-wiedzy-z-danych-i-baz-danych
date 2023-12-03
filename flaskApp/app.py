@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, render_template, send_from_directory, url_for
 from ImageProcessor import ImageProcessor  # Importuj klasę ImageProcessor
 from werkzeug.utils import secure_filename
@@ -21,20 +22,14 @@ def process_image():
     data = request.json
     filename = data['filename']
     image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    blur_kernel_size = tuple(data['blur_kernel_size'])
-    noise_kernel_size = tuple(data['noise_kernel_size'])
 
     processor = ImageProcessor(
         image_path=image_path,
-        blur_kernel_size=blur_kernel_size,
-        noise_kernel_size=noise_kernel_size,
-        lung_contour_area_threshold=data['lung_contour_area_threshold'],
         black_bg_threshold=data['black_bg_threshold'],
-        use_otsu=data['use_otsu'],
-        use_histogram=data['use_histogram'],
-        overlay_alpha=data['overlay_alpha'],
-        adaptive_threshold_block_size=data['adaptive_threshold_block_size'],
-        adaptive_threshold_C=data['adaptive_threshold_C']
+        threshold_decrement=data['threshold_decrement'],
+        brightness_cutoff_percent = data['brightness_cutoff_percent'],
+        iterations=data['iterations'],
+        min_contiguous_pixels=data['min_contiguous_pixels'],
     )
 
     output_image = processor.output_image

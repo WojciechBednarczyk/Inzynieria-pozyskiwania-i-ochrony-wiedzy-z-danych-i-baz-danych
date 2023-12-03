@@ -1,3 +1,4 @@
+<!--templates/upload.html-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -12,105 +13,42 @@
 <img id="processedImage" src="" alt="Processed Image" style="max-width: 100%; max-height: 100vh; object-fit: contain;">
 
 <div>
-    <label>Otsu: <input type="checkbox" id="otsuCheckbox" checked></label>
-    <label>Histogram: <input type="checkbox" id="histogramCheckbox"></label>
+    <label for="threshold_decrement">Threshold Decrement:</label>
+    <input type="number" id="threshold_decrement" min="0" value="5">
 </div>
+
 <div>
-    Blur Kernel Size: <input type="number" id="blurKernelSize" min="1" value="21" step="2">
-    Noise Kernel Size: <input type="number" id="noiseKernelSize" min="1" value="21" step="2">
+    <label for="brightness_cutoff_percent">Brightness Cutoff Percent:</label>
+    <input type="number" id="brightness_cutoff_percent" min="0" max="300" value="50">
 </div>
+
 <div>
-    Black Background Threshold: <input type="number" id="blackBgThreshold" min="0" max="255" value="110">
+    <label for="iterations">Iterations:</label>
+    <input type="number" id="iterations" min="1" value="1">
 </div>
+
 <div>
-    Overlay Alpha: <input type="number" id="overlayAlpha" min="0" max="1" step="0.1" value="0.3">
+    <label for="min_contiguous_pixels">Minimum Contiguous Pixels:</label>
+    <input type="number" id="min_contiguous_pixels" min="1" value="5">
 </div>
+
 <div>
-    Area Threshold: <span id="areaThresholdValue">5000</span>
-    <input type="range" id="areaThresholdSlider" min="1" max="100000" step="1000" value="5000">
+    <label for="black_bg_threshold">Black Background Threshold:</label>
+    <input type="number" id="black_bg_threshold" min="1" value="100">
 </div>
-<div>
-    Adaptive Threshold Block Size: <input type="number" id="adaptiveBlockSize" min="3" value="301" step="2">
-    Adaptive Threshold C: <input type="number" id="adaptiveThresholdC" min="1" value="3">
-</div>
+
 
 <script>
-    function isPositiveInteger(value) {
-        return Number.isInteger(value) && value > 0;
-    }
-
-    function isOdd(value) {
-        return value % 2 === 1;
-    }
-
-    function isWithinRange(value, min, max) {
-        return value >= min && value <= max;
-    }
-
-    function updateSliderValues() {
-        $('#areaThresholdValue').text($('#areaThresholdSlider').val());
-    }
-
-    function validateInputs() {
-        let blurKernelSizeValue = parseInt($('#blurKernelSize').val());
-        let noiseKernelSizeValue = parseInt($('#noiseKernelSize').val());
-        let blackBgThresholdValue = parseInt($('#blackBgThreshold').val());
-        let overlayAlphaValue = parseFloat($('#overlayAlpha').val());
-        let adaptiveBlockSizeValue = parseInt($('#adaptiveBlockSize').val());
-        let adaptiveThresholdCValue = parseInt($('#adaptiveThresholdC').val());
-
-        if (!isPositiveInteger(blurKernelSizeValue) || !isOdd(blurKernelSizeValue)) {
-            alert('Blur Kernel Size must be a positive odd integer.');
-            return false;
-        }
-
-        if (!isPositiveInteger(noiseKernelSizeValue) || !isOdd(noiseKernelSizeValue)) {
-            alert('Noise Kernel Size must be a positive odd integer.');
-            return false;
-        }
-
-        if (!isWithinRange(blackBgThresholdValue, 0, 255)) {
-            alert('Black Background Threshold must be between 0 and 255.');
-            return false;
-        }
-
-        if (!isWithinRange(overlayAlphaValue, 0, 1)) {
-            alert('Overlay Alpha must be between 0 and 1.');
-            return false;
-        }
-
-        if (!isPositiveInteger(adaptiveBlockSizeValue) || !isOdd(adaptiveBlockSizeValue)) {
-            alert('Adaptive Threshold Block Size must be a positive odd integer.');
-            return false;
-        }
-
-        if (!isPositiveInteger(adaptiveThresholdCValue)) {
-            alert('Adaptive Threshold C must be a positive integer.');
-            return false;
-        }
-
-        return true;
-    }
-
     function updateImage() {
-        if (!validateInputs()) {
-            return; // Zatrzymaj aktualizację obrazu, jeśli walidacja nie powiedzie się
-        }
-
-        let blurKernelSizeValue = parseInt($('#blurKernelSize').val());
-        let noiseKernelSizeValue = parseInt($('#noiseKernelSize').val());
         let dataToSend = {
             'filename': uploadedFilename,
-            'use_otsu': $('#otsuCheckbox').is(':checked'),
-            'use_histogram': $('#histogramCheckbox').is(':checked'),
-            'blur_kernel_size': [blurKernelSizeValue, blurKernelSizeValue],
-            'noise_kernel_size': [noiseKernelSizeValue, noiseKernelSizeValue],
-            'black_bg_threshold': parseInt($('#blackBgThreshold').val()),
-            'overlay_alpha': parseFloat($('#overlayAlpha').val()),
-            'lung_contour_area_threshold': parseInt($('#areaThresholdSlider').val()),
-            'adaptive_threshold_block_size': parseInt($('#adaptiveBlockSize').val()),
-            'adaptive_threshold_C': parseInt($('#adaptiveThresholdC').val())
+            'threshold_decrement': parseInt($('#threshold_decrement').val(), 10),
+            'brightness_cutoff_percent': parseInt($('#brightness_cutoff_percent').val(), 10),
+            'iterations': parseInt($('#iterations').val(), 10),
+            'min_contiguous_pixels': parseInt($('#min_contiguous_pixels').val(), 10),
+            'black_bg_threshold': parseInt($('#black_bg_threshold').val(), 10)
         };
+
 
         $.ajax({
             url: '/process',
@@ -142,7 +80,8 @@
             processData: false,  // Wymagane, aby przesłać dane jako FormData
             contentType: false,  // Wymagane, aby przesłać dane jako FormData
             success: function (data) {
-                // Tutaj możesz obsłużyć odpowiedź serwera, jeśli to konieczne
+                let imageSrc = data.image_url + '?t=' + new Date().getTime();
+                $('#processedImage').attr('src', imageSrc);
             },
             error: function () {
                 alert('Failed to upload file.');
@@ -151,7 +90,6 @@
     });
 
     $('input').on('input change', function () {
-        updateSliderValues();
         updateImage();
     });
 </script>
