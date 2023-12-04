@@ -2,7 +2,7 @@
 
 ## Adres Repozytorium Git
 Repozytorium kodu źródłowego dla Projektu `Analizator oraz zaciemniacz medycznych zdjęć rentgenowskich` można znaleźć pod adresem:
-[GitHub - ImageProcessor](https://github.com/twoje-username/twoje-repozytorium)
+[GitHub](https://github.com/WojciechBednarczyk/Inzynieria-pozyskiwania-i-ochrony-wiedzy-z-danych-i-baz-danych.git)
 
 
 ## Przegląd
