@@ -29,6 +29,7 @@ class ImageProcessor:
         self.prepare_final_mask()
         self.overlay = self.apply_overlay()
         self.output_image = self.prepare_output()
+        self.final_lung_area = self.prepare_final_mask()
 
     def load_image(self):
         image = cv2.imread(self.image_path, cv2.IMREAD_GRAYSCALE)
@@ -116,6 +117,7 @@ class ImageProcessor:
         final_lung_area = cv2.bitwise_and(self.color_images()[1], self.color_images()[1], mask=final_mask)
 
         self.colored_images = self.colored_images[0], final_lung_area
+        return final_lung_area
 
     def color_images(self):
         original_colored = cv2.cvtColor(self.apply_background_mask(self.image), cv2.COLOR_GRAY2BGR)
@@ -171,17 +173,44 @@ class ImageProcessor:
         histogram_data_filename = 'histogram_data.txt'
         np.savetxt(os.path.join(output_path, histogram_data_filename), hist_normalized)
 
+    def add_tumor_shape_to_final_mask(self, tumor_size):
+        # Utwórz nową maskę na podstawie obecnej finalnej maski
+        mask_with_tumor = np.copy(self.final_lung_area)
 
-# Example usage:
-# Example usage:
+        # Znajdź kontury na masce płuc
+        contours, _ = cv2.findContours(self.lung_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Posortuj kontury według powierzchni w porządku malejącym i weź dwa największe
+        sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)[:2]
+
+        # Wybierz jeden z dwóch największych konturów
+        selected_contour = sorted_contours[0] if len(sorted_contours) > 0 else None
+
+        if selected_contour is not None:
+            # Oblicz współrzędne punktów dla nieregularnego kształtu guza
+            tumor_points = []
+
+            for i in range(20):  # Ilość punktów - dostosuj według potrzeb
+                angle = np.random.uniform(0, 2 * np.pi)
+                distance = np.random.uniform(0, tumor_size)
+                random_x = int(selected_contour.mean(axis=0)[0, 0] + distance * np.cos(angle))
+                random_y = int(selected_contour.mean(axis=0)[0, 1] + distance * np.sin(angle))
+                tumor_points.append((random_x, random_y))
+
+            # Narysuj nieregularny kształt guza na masce
+            cv2.fillPoly(mask_with_tumor, [np.array(tumor_points)], color=(0, 0, 255))
+
+        return mask_with_tumor
+
+
 if __name__ == '__main__':
     # Zakładamy, że ścieżka do obrazu rentgenowskiego to 'lung_xray.jpg'
-    image_path = 'chest/IM-0135-0001.jpeg'
+    image_path = 'chest/IM-0140-0001.jpeg'
 
     # Tworzenie instancji klasy ImageProcessor z określonymi parametrami
     processor = ImageProcessor(image_path,
-                               black_bg_threshold=110,
-                               brightness_cutoff_percent=120,
+                               black_bg_threshold=60,
+                               brightness_cutoff_percent=100,
                                threshold_decrement=5,
                                iterations=1,
                                min_contiguous_pixels=60)
@@ -189,5 +218,12 @@ if __name__ == '__main__':
     # Przetwarzanie obrazu
     processed_image = processor.output_image
 
-    # Zapisanie przetworzonego obrazu
-    processor.save_result(processed_image, 'results/processed_lung_xray.jpg')
+        # Dodanie kształtu guza do finalnej maski
+    tumor_size = 30  # Rozmiar guza
+    final_lung_area_with_tumor = processor.add_tumor_shape_to_final_mask(tumor_size)
+
+    # Zapisanie finalnej maski z dodanym guzem
+    processor.save_result(final_lung_area_with_tumor, 'results/aaaprocessed_lung_xray_with_tumor.jpg')
+
+
+    # processor.save_result(processed_image, 'results/aaaprocessed_lung_xray.jpg')
