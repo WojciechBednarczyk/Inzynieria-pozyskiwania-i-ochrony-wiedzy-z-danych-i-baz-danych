@@ -187,15 +187,21 @@ class ImageProcessor:
         selected_contour = sorted_contours[0] if len(sorted_contours) > 0 else None
 
         if selected_contour is not None:
-            # Oblicz współrzędne punktów dla nieregularnego kształtu guza
-            tumor_points = []
+            while True:
+            # Losuj punkt wewnątrz konturu
+                random_point_x = np.random.randint(min(selected_contour[:, :, 0])[0], max(selected_contour[:, :, 0])[0])
+                random_point_y = np.random.randint(min(selected_contour[:, :, 1])[0], max(selected_contour[:, :, 1])[0])
+                if cv2.pointPolygonTest(selected_contour, (random_point_x, random_point_y), False) == 1:
+                    break
 
-            for i in range(20):  # Ilość punktów - dostosuj według potrzeb
-                angle = np.random.uniform(0, 2 * np.pi)
-                distance = np.random.uniform(0, tumor_size)
-                random_x = int(selected_contour.mean(axis=0)[0, 0] + distance * np.cos(angle))
-                random_y = int(selected_contour.mean(axis=0)[0, 1] + distance * np.sin(angle))
-                tumor_points.append((random_x, random_y))
+                # Oblicz współrzędne punktów dla nieregularnego kształtu guza
+        tumor_points = []
+        for i in range(20):  # Ilość punktów - dostosuj według potrzeb
+            angle = np.random.uniform(0, 2 * np.pi)
+            distance = np.random.uniform(0, tumor_size)
+            random_x = int(random_point_x + distance * np.cos(angle))
+            random_y = int(random_point_y + distance * np.sin(angle))
+            tumor_points.append((random_x, random_y))
 
             # Narysuj nieregularny kształt guza na masce
             cv2.fillPoly(mask_with_tumor, [np.array(tumor_points)], color=(0, 0, 255))
@@ -226,4 +232,4 @@ if __name__ == '__main__':
     processor.save_result(final_lung_area_with_tumor, 'results/aaaprocessed_lung_xray_with_tumor.jpg')
 
 
-    # processor.save_result(processed_image, 'results/aaaprocessed_lung_xray.jpg')
+    processor.save_result(processed_image, 'results/aaabbbprocessed_lung_xray.jpg')
