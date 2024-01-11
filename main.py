@@ -187,15 +187,21 @@ class ImageProcessor:
         selected_contour = sorted_contours[0] if len(sorted_contours) > 0 else None
 
         if selected_contour is not None:
-            # Oblicz współrzędne punktów dla nieregularnego kształtu guza
-            tumor_points = []
+            while True:
+            # Losuj punkt wewnątrz konturu
+                random_point_x = np.random.randint(min(selected_contour[:, :, 0])[0], max(selected_contour[:, :, 0])[0])
+                random_point_y = np.random.randint(min(selected_contour[:, :, 1])[0], max(selected_contour[:, :, 1])[0])
+                if cv2.pointPolygonTest(selected_contour, (random_point_x, random_point_y), False) == 1:
+                    break
 
-            for i in range(20):  # Ilość punktów - dostosuj według potrzeb
-                angle = np.random.uniform(0, 2 * np.pi)
-                distance = np.random.uniform(0, tumor_size)
-                random_x = int(selected_contour.mean(axis=0)[0, 0] + distance * np.cos(angle))
-                random_y = int(selected_contour.mean(axis=0)[0, 1] + distance * np.sin(angle))
-                tumor_points.append((random_x, random_y))
+                # Oblicz współrzędne punktów dla nieregularnego kształtu guza
+        tumor_points = []
+        for i in range(20):  # Ilość punktów - dostosuj według potrzeb
+            angle = np.random.uniform(0, 2 * np.pi)
+            distance = np.random.uniform(0, tumor_size)
+            random_x = int(random_point_x + distance * np.cos(angle))
+            random_y = int(random_point_y + distance * np.sin(angle))
+            tumor_points.append((random_x, random_y))
 
             # Narysuj nieregularny kształt guza na masce
             cv2.fillPoly(mask_with_tumor, [np.array(tumor_points)], color=(0, 0, 255))
@@ -203,9 +209,25 @@ class ImageProcessor:
         return mask_with_tumor
 
 
+
+
+
+    def remove_blue(self, image):
+        # Zero out the blue channel
+        image[:, :, 0] = 0
+        return image
+
+    def remove_red(self, image):
+        # Zero out the blue channel
+        image[:, :, 2] = 0
+        return image
+
+
 if __name__ == '__main__':
     # Zakładamy, że ścieżka do obrazu rentgenowskiego to 'lung_xray.jpg'
     image_path = 'chest/IM-0140-0001.jpeg'
+
+    image = cv2.imread(image_path)
 
     # Tworzenie instancji klasy ImageProcessor z określonymi parametrami
     processor = ImageProcessor(image_path,
@@ -220,10 +242,52 @@ if __name__ == '__main__':
 
         # Dodanie kształtu guza do finalnej maski
     tumor_size = 30  # Rozmiar guza
+
+    #generowanie guza
     final_lung_area_with_tumor = processor.add_tumor_shape_to_final_mask(tumor_size)
 
+
+    #remove blue from final_lung_area_with_tumor // przygotowanie maski guza
+    tumor_area = processor.remove_blue(final_lung_area_with_tumor)
+
+    #prepare lung are
+    lung_area = processor.remove_red(processor.final_lung_area)
+
+    def combine_two_images(image1, image2):
+        return cv2.addWeighted(image1, 1, image2, 0.3, 0)
+
+
+
+    final_image_tumor = combine_two_images(image, tumor_area)
+    final_image_lung = combine_two_images(image, lung_area)
+
+
+    def cut_out_lung_from_image(image, mask):
+        # Ensure the mask is a single-channel binary image of type uint8
+        if len(mask.shape) > 2:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        mask = cv2.threshold(mask, 1, 255, cv2.THRESH_BINARY)[1].astype(np.uint8)
+
+        # Resize mask to match the image size if they are different
+        if mask.shape[:2] != image.shape[:2]:
+            mask = cv2.resize(mask, (image.shape[1], image.shape[0]))
+
+        return cv2.bitwise_and(image, image, mask=mask)
+
+
+    processor.save_result(final_image_tumor, 'results/final_image_tumor.jpg')
+    processor.save_result(final_image_lung, 'results/final_image_lung.jpg')
+
+    lungs_image = cut_out_lung_from_image(image, lung_area)
+
+    processor.save_result(lungs_image, 'results/lungs_image.jpg')
+
+    lungs_image_with_tumor = combine_two_images(lungs_image, tumor_area)
+
+    processor.save_result(lungs_image_with_tumor, 'results/lungs_image_with_tumor.jpg')
+
     # Zapisanie finalnej maski z dodanym guzem
-    processor.save_result(final_lung_area_with_tumor, 'results/aaaprocessed_lung_xray_with_tumor.jpg')
+    processor.save_result(tumor_area, 'results/aaaprocessed_lung_xray_with_tumor.jpg')
 
 
-    # processor.save_result(processed_image, 'results/aaaprocessed_lung_xray.jpg')
+    processor.save_result(processed_image, 'results/aaabbbprocessed_lung_xray.jpg')
