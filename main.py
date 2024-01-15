@@ -194,14 +194,16 @@ class ImageProcessor:
                 if cv2.pointPolygonTest(selected_contour, (random_point_x, random_point_y), False) == 1:
                     break
 
-                # Oblicz współrzędne punktów dla nieregularnego kształtu guza
+        # Oblicz współrzędne punktów dla kształtu guza koło-podobnego
         tumor_points = []
-        for i in range(20):  # Ilość punktów - dostosuj według potrzeb
-            angle = np.random.uniform(0, 2 * np.pi)
-            distance = np.random.uniform(0, tumor_size)
-            random_x = int(random_point_x + distance * np.cos(angle))
-            random_y = int(random_point_y + distance * np.sin(angle))
-            tumor_points.append((random_x, random_y))
+        deformation_factor=0.1
+        number_of_points=20
+        for i in range(number_of_points):  # Ilość punktów - dostosuj według potrzeb
+            angle = 2 * np.pi * i / number_of_points
+            radius = tumor_size + np.random.uniform(-deformation_factor * tumor_size, deformation_factor * tumor_size)
+            x = int(random_point_x + radius * np.cos(angle))
+            y = int(random_point_y + radius * np.sin(angle))
+            tumor_points.append((x, y))
 
             # Narysuj nieregularny kształt guza na masce
             cv2.fillPoly(mask_with_tumor, [np.array(tumor_points)], color=(0, 0, 255))
