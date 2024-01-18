@@ -196,7 +196,7 @@ class ImageProcessor:
 
         # Oblicz współrzędne punktów dla kształtu guza koło-podobnego
         tumor_points = []
-        deformation_factor = 0
+        deformation_factor = 0.1
         number_of_points = 20
         for i in range(number_of_points):  # Ilość punktów - dostosuj według potrzeb
             angle = 2 * np.pi * i / number_of_points
