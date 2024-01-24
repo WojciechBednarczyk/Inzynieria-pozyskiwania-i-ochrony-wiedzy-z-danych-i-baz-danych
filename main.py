@@ -260,7 +260,7 @@ if __name__ == '__main__':
     processed_image = processor.output_image
 
     # Dodanie kształtu guza do finalnej maski
-    tumor_size = 100  # Rozmiar guza
+    tumor_size = 50  # Rozmiar guza
 
     # generowanie guza
     final_lung_area_with_tumor = processor.add_tumor_shape_to_final_mask(tumor_size)
