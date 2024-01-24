@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # Load the image of the lungs
-img = cv2.imread('results/detected_circular_shapes.png')
+img = cv2.imread('results/lungs_image_with_tumor.png')
 
 # Convert to grayscale.
 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -12,8 +12,8 @@ gray_blurred = cv2.blur(gray, (3, 3))
 
 # Apply Hough transform on the blurred image.
 detected_circles = cv2.HoughCircles(gray_blurred,
-                                    cv2.HOUGH_GRADIENT, 1, 100, param1=30,
-                                    param2=60, minRadius=30, maxRadius=60)
+                                    cv2.HOUGH_GRADIENT_ALT, 2, 35, param1=400,
+                                    param2=0.6, minRadius=95, maxRadius=105)
 
 # Draw circles that are detected.
 if detected_circles is not None:
