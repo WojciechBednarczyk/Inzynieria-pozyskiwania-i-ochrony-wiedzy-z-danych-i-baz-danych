@@ -173,6 +173,35 @@ class ImageProcessor:
         histogram_data_filename = 'histogram_data.txt'
         np.savetxt(os.path.join(output_path, histogram_data_filename), hist_normalized)
 
+    def add_tumor_shape_to_image(self):
+        # Utwórz nową maskę na podstawie obecnej finalnej maski
+        mask_with_tumor = self.add_tumor_shape_to_final_mask(tumor_size)
+
+        # Znajdź kontury na masce płuc
+        contours, _ = cv2.findContours(self.lung_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Posortuj kontury według powierzchni w porządku malejącym i weź dwa największe
+        sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)[:2]
+
+        # Wybierz jeden z dwóch największych konturów
+        selected_contour = sorted_contours[0] if len(sorted_contours) > 0 else None
+
+        
+
+        if selected_contour is not None:
+            contour_mask = np.zeros_like(image)
+
+            cv2.fillPoly(contour_mask, [selected_contour], color=(255, 255, 255))
+
+            cutout = cv2.bitwise_and(image, contour_mask)
+        # Dodanie guza do wyciętego obszaru
+        red_tumor_mask = mask_with_tumor == [0, 0, 255]
+        cutout[red_tumor_mask] = mask_with_tumor[red_tumor_mask]
+
+        # Nakładanie zmodyfikowanego obszaru z powrotem na oryginalny obraz
+        image[contour_mask[:,:,0] == 255] = cutout[contour_mask[:,:,0] == 255]
+
+        return cutout
     def add_tumor_shape_to_final_mask(self, tumor_size):
         # Utwórz nową maskę na podstawie obecnej finalnej maski
         mask_with_tumor = np.copy(self.final_lung_area)
@@ -208,10 +237,10 @@ class ImageProcessor:
 
         return mask_with_tumor
 
-
 if __name__ == '__main__':
     # Zakładamy, że ścieżka do obrazu rentgenowskiego to 'lung_xray.jpg'
     image_path = 'chest/IM-0140-0001.jpeg'
+    image = cv2.imread(image_path)
 
     # Tworzenie instancji klasy ImageProcessor z określonymi parametrami
     processor = ImageProcessor(image_path,
@@ -230,6 +259,7 @@ if __name__ == '__main__':
 
     # Zapisanie finalnej maski z dodanym guzem
     processor.save_result(final_lung_area_with_tumor, 'results/aaaprocessed_lung_xray_with_tumor.jpg')
+    processor.save_result(processor.add_tumor_shape_to_image(), 'results/aaacccprocessed_lung_xray_with_tumor.jpg')
 
 
     processor.save_result(processed_image, 'results/aaabbbprocessed_lung_xray.jpg')
